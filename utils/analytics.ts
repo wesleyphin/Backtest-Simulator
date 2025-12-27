@@ -15,6 +15,13 @@ export interface SegmentedAnalysis {
   short: RegressionResult[];
 }
 
+export interface RollingStat {
+    index: number;
+    winRate: number;
+    sharpe: number;
+    avgPnl: number;
+}
+
 const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
 const stdDev = (arr: number[], mu: number) => {
@@ -133,4 +140,60 @@ export const calculateDistributionStats = (values: number[]) => {
   const kurtosis = (m4 / Math.pow(m2, 2)) - 3; // Excess Kurtosis
 
   return { skew, kurtosis, mean: mu, stdDev };
+};
+
+// --- New Analytics for v2 ---
+
+export const calculateSQN = (trades: Trade[]): { score: number, rating: string } => {
+    // Min 2 trades to calculate dev
+    if (trades.length < 2) return { score: 0, rating: 'Insufficient Data' };
+
+    const pnls = trades.map(t => t.pnl);
+    const avgPnl = mean(pnls);
+    const dev = stdDev(pnls, avgPnl);
+    
+    if (dev === 0) return { score: 0, rating: 'N/A' };
+
+    const sqn = (avgPnl / dev) * Math.sqrt(trades.length);
+    
+    let rating = 'Poor';
+    // Van Tharp Scale
+    if (sqn < 1.6) rating = 'Poor';
+    else if (sqn < 2.0) rating = 'Average';
+    else if (sqn < 2.5) rating = 'Good';
+    else if (sqn < 3.0) rating = 'Very Good';
+    else if (sqn < 5.0) rating = 'Excellent';
+    else if (sqn < 7.0) rating = 'Superb';
+    else rating = 'Holy Grail';
+
+    return { score: sqn, rating };
+};
+
+export const calculateRollingStats = (trades: Trade[], windowSize: number = 50): RollingStat[] => {
+    if (trades.length < windowSize) return [];
+
+    const stats: RollingStat[] = [];
+    const pnls = trades.map(t => t.pnl);
+
+    for (let i = windowSize; i <= pnls.length; i++) {
+        const window = pnls.slice(i - windowSize, i);
+        
+        // Win Rate
+        const wins = window.filter(p => p > 0).length;
+        const winRate = (wins / windowSize) * 100;
+
+        // Sharpe (simplified, assuming risk free = 0)
+        const avg = mean(window);
+        const dev = stdDev(window, avg);
+        const sharpe = dev === 0 ? 0 : avg / dev; // Not annualized here, just relative stability
+
+        stats.push({
+            index: i,
+            winRate,
+            sharpe,
+            avgPnl: avg
+        });
+    }
+
+    return stats;
 };

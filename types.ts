@@ -7,6 +7,8 @@ export interface Trade {
   pnlPercent: number;
   entryPrice?: number;
   exitPrice?: number;
+  mae?: number; // Maximum Adverse Excursion (Drawdown during trade, usually negative)
+  mfe?: number; // Maximum Favorable Excursion (Run-up during trade, positive)
 }
 
 export interface SimulationConfig {
@@ -15,7 +17,8 @@ export interface SimulationConfig {
   tradesPerSimulation: number;
   seed: number;
   convergenceTolerance: number; 
-  confidenceLevel: number; 
+  confidenceLevel: number;
+  riskModel: 'fixed_pnl' | 'percent_equity'; // New: Position Sizing
 }
 
 // New Prop Firm Specific Types

@@ -19,9 +19,13 @@ export const runSimulationBatch = (
   startId: number,
   randomGenerator: () => number // Pass the seeded generator
 ): SimulationResult[] => {
-  const { initialEquity, tradesPerSimulation } = config;
+  const { initialEquity, tradesPerSimulation, riskModel } = config;
   const results: SimulationResult[] = [];
-  const pnlPool = trades.map(t => t.pnl);
+  
+  // Pre-process pool based on risk model
+  // If fixed_pnl: use absolute pnl values
+  // If percent_equity: use pnlPercent (decimal)
+  const pnlPool = trades.map(t => riskModel === 'percent_equity' ? (t.pnlPercent / 100) : t.pnl);
 
   if (pnlPool.length === 0) return [];
 
@@ -44,9 +48,22 @@ export const runSimulationBatch = (
     for (let j = 0; j < tradesPerSimulation; j++) {
       // Use the seeded generator instead of Math.random()
       const randomIndex = Math.floor(randomGenerator() * pnlPool.length);
-      const tradePnl = pnlPool[randomIndex];
+      const tradeValue = pnlPool[randomIndex];
 
-      currentEquity += tradePnl;
+      let tradePnl = 0;
+      
+      if (riskModel === 'percent_equity') {
+         // Compound Growth: Eq = Eq * (1 + return)
+         // tradeValue is percentage (e.g., 0.02 for 2%)
+         const pnlAmount = currentEquity * tradeValue;
+         currentEquity += pnlAmount;
+         tradePnl = pnlAmount;
+      } else {
+         // Fixed Lots
+         currentEquity += tradeValue;
+         tradePnl = tradeValue;
+      }
+      
       equityCurve.push(currentEquity);
       simulationPnls.push(tradePnl);
 
@@ -76,6 +93,10 @@ export const runSimulationBatch = (
 
       if (currentEquity <= 0) {
         isRuined = true;
+        // Break early if ruined to save cycles? Or keep going to see debt depth?
+        // Usually break early in realistic sims, but for curve completeness we might continue.
+        // Let's break early to prevent NaN spirals if equity goes negative in % model
+        if (riskModel === 'percent_equity' && currentEquity <= 1) break; 
       }
     }
 
@@ -91,7 +112,7 @@ export const runSimulationBatch = (
 
     // --- Calculate Ratios (Per Trade Basis) ---
     // Average PnL per trade
-    const avgPnl = (currentEquity - initialEquity) / tradesPerSimulation;
+    const avgPnl = (currentEquity - initialEquity) / equityCurve.length;
     
     let sumSqDiff = 0;
     let sumSqDownside = 0;
@@ -102,8 +123,8 @@ export const runSimulationBatch = (
         if (p < 0) sumSqDownside += Math.pow(p, 2); 
     }
     
-    const stdDev = Math.sqrt(sumSqDiff / tradesPerSimulation);
-    const downsideDev = Math.sqrt(sumSqDownside / tradesPerSimulation);
+    const stdDev = Math.sqrt(sumSqDiff / simulationPnls.length);
+    const downsideDev = Math.sqrt(sumSqDownside / simulationPnls.length);
     
     // Ratios (per trade)
     const sharpeRatio = stdDev === 0 ? 0 : avgPnl / stdDev;
@@ -115,7 +136,7 @@ export const runSimulationBatch = (
       finalEquity: currentEquity,
       maxDrawdown,
       maxDrawdownPercent: maxDDPercent * 100,
-      winRate: (winCount / tradesPerSimulation) * 100,
+      winRate: (winCount / simulationPnls.length) * 100,
       profitFactor: grossLoss === 0 ? grossProfit : grossProfit / grossLoss,
       maxConsecutiveLosses,
       isRuined,

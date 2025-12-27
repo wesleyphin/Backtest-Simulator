@@ -15,7 +15,10 @@ import {
   Scale,
   Percent,
   GraduationCap,
-  ArrowDown
+  ArrowDown,
+  Gauge,
+  Trophy,
+  Target
 } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import StatsCard from './components/StatsCard';
@@ -25,6 +28,9 @@ import {
     VaRCurveChart, 
     HistoricalEquityChart, 
     ScatterPnLDuration,
+    ScatterMAEMFE,
+    UnderwaterChart,
+    RollingStatsChart,
     SkewKurtosisChart 
 } from './components/Charts';
 import RegressionAnalysis from './components/RegressionAnalysis';
@@ -34,6 +40,7 @@ import PropFirmDashboard from './components/PropFirmDashboard';
 import { parseTradingViewCSV } from './utils/csvParser';
 import { runSimulationBatch, calculateStatistics, createPRNG } from './utils/monteCarlo';
 import { runPropFirmSimulation } from './utils/propFirmLogic';
+import { calculateSQN } from './utils/analytics';
 import { Trade, SimulationResult, SimulationConfig, Statistics, PropFirmConfig, PropFirmAggregateStats } from './types';
 
 function App() {
@@ -46,7 +53,8 @@ function App() {
     tradesPerSimulation: 100,
     seed: 12345,
     convergenceTolerance: 0.1, 
-    confidenceLevel: 95
+    confidenceLevel: 95,
+    riskModel: 'fixed_pnl'
   });
 
   const [propConfig, setPropConfig] = useState<PropFirmConfig>({
@@ -63,7 +71,6 @@ function App() {
 
   // State
   const [mcResults, setMcResults] = useState<SimulationResult[]>([]);
-  // Removed mcStats state, will use useMemo
   const [propStats, setPropStats] = useState<PropFirmAggregateStats | null>(null);
   
   const [status, setStatus] = useState<'idle' | 'running' | 'paused' | 'completed' | 'converged'>('idle');
@@ -177,7 +184,7 @@ function App() {
 
         setMcResults([...resultsRef.current]);
         setProgress(Math.round((resultsRef.current.length / mcConfig.numSimulations) * 100));
-        timerRef.current = setTimeout(runBatch, 0);
+        timerRef.current = window.setTimeout(runBatch, 0);
       };
 
       // Start the loop
@@ -187,7 +194,7 @@ function App() {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [status, mcConfig.numSimulations, mcConfig.convergenceTolerance, mcConfig.seed, trades, triggerPropFirmSim]);
+  }, [status, mcConfig.numSimulations, mcConfig.convergenceTolerance, mcConfig.seed, trades, triggerPropFirmSim, mcConfig.riskModel, mcConfig.initialEquity]);
 
   // Calculate MC Stats via useMemo instead of useEffect (Derived State)
   const mcStats = useMemo(() => {
@@ -220,6 +227,9 @@ function App() {
     const winRate = (wins.length / trades.length) * 100;
     const profitFactor = Math.abs(wins.reduce((acc, t) => acc + t.pnl, 0)) / Math.abs(losses.reduce((acc, t) => acc + t.pnl, 0) || 1);
     
+    // SQN
+    const sqn = calculateSQN(trades);
+
     // Duration for Annualization
     const timestamps = trades
         .map(t => new Date(t.entryTime).getTime())
@@ -244,7 +254,7 @@ function App() {
     const sharpe = (stdDev === 0 ? 0 : avgPnl / stdDev) * annualFactor;
     const sortino = (downsideDev === 0 ? 0 : avgPnl / downsideDev) * annualFactor;
 
-    return { totalPnl, winRate, profitFactor, sharpe, sortino, count: trades.length };
+    return { totalPnl, winRate, profitFactor, sharpe, sortino, count: trades.length, sqn };
   }, [trades]);
 
   return (
@@ -331,6 +341,25 @@ function App() {
                          <label className="text-[10px] text-neutral-400 block mb-1">Confidence ({mcConfig.confidenceLevel}%)</label>
                          <input type="range" min="50" max="99" value={mcConfig.confidenceLevel} onChange={e => setMcConfig({...mcConfig, confidenceLevel: Number(e.target.value)})} className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-primary"/>
                     </div>
+                    
+                    {/* Position Sizing Toggle */}
+                    <div className="pt-2">
+                         <label className="text-[10px] text-neutral-400 block mb-1">Position Sizing Model</label>
+                         <div className="grid grid-cols-2 gap-1 bg-neutral-900 p-1 rounded">
+                              <button 
+                                onClick={() => setMcConfig({...mcConfig, riskModel: 'fixed_pnl'})}
+                                className={`text-[10px] py-1 rounded transition-colors ${mcConfig.riskModel === 'fixed_pnl' ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+                              >
+                                Fixed PnL
+                              </button>
+                              <button 
+                                onClick={() => setMcConfig({...mcConfig, riskModel: 'percent_equity'})}
+                                className={`text-[10px] py-1 rounded transition-colors ${mcConfig.riskModel === 'percent_equity' ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+                              >
+                                Compounding
+                              </button>
+                         </div>
+                    </div>
                  </div>
 
                  {/* Prop Inputs */}
@@ -364,28 +393,18 @@ function App() {
 
               </div>
 
-              {/* Historical Mini Card */}
-              {historicalStats && (
-                  <div className="bg-surface rounded-xl p-4 border border-neutral-800 space-y-3">
-                      <h4 className="text-xs font-bold text-neutral-500 uppercase mb-2">Historical Baseline</h4>
-                      <div className="flex justify-between text-sm">
-                          <span className="text-neutral-400">Win Rate</span>
-                          <span className="text-emerald-400 font-mono">{historicalStats.winRate.toFixed(1)}%</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                          <span className="text-neutral-400">Profit Factor</span>
-                          <span className="text-blue-400 font-mono">{historicalStats.profitFactor.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                          <span className="text-neutral-400">Sharpe Ratio</span>
-                          <span className="text-neutral-200 font-mono">{historicalStats.sharpe.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                          <span className="text-neutral-400">Sortino Ratio</span>
-                          <span className="text-neutral-200 font-mono">{historicalStats.sortino.toFixed(2)}</span>
-                      </div>
-                  </div>
-              )}
+              {/* Historical Mini Card (Reduced version since main cards are in grid now) */}
+              <div className="bg-surface rounded-xl p-4 border border-neutral-800 space-y-3">
+                 <h4 className="text-xs font-bold text-neutral-500 uppercase mb-2">Sim Status</h4>
+                 <div className="flex justify-between text-sm">
+                      <span className="text-neutral-400">Mode</span>
+                      <span className="text-neutral-200">{mcConfig.riskModel === 'fixed_pnl' ? 'Fixed Risk' : '% Compounding'}</span>
+                 </div>
+                 <div className="flex justify-between text-sm">
+                      <span className="text-neutral-400">Iterations</span>
+                      <span className="text-neutral-200">{mcConfig.numSimulations}</span>
+                 </div>
+              </div>
             </div>
 
             {/* --- MAIN CONTENT --- */}
@@ -395,15 +414,62 @@ function App() {
               <section className="space-y-6">
                 <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
                     <TrendingUp className="text-primary w-5 h-5" />
-                    <h2 className="text-xl font-bold">1. Data Analysis</h2>
+                    <h2 className="text-xl font-bold">1. Historical Analysis</h2>
                 </div>
                 
+                {/* Historical Stats Grid */}
+                {historicalStats && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <StatsCard 
+                            title="SQN Score" 
+                            value={historicalStats.sqn.score.toFixed(2)} 
+                            subValue={historicalStats.sqn.rating} 
+                            icon={Trophy}
+                            color={historicalStats.sqn.score > 2.5 ? 'success' : historicalStats.sqn.score > 1.6 ? 'warning' : 'danger'}
+                        />
+                        <StatsCard 
+                            title="Win Rate" 
+                            value={`${historicalStats.winRate.toFixed(1)}%`} 
+                            icon={Target}
+                            color="default"
+                        />
+                        <StatsCard 
+                            title="Profit Factor" 
+                            value={historicalStats.profitFactor.toFixed(2)} 
+                            icon={Scale}
+                            color="default"
+                        />
+                        <StatsCard 
+                            title="Sharpe Ratio" 
+                            value={historicalStats.sharpe.toFixed(2)} 
+                            icon={Activity}
+                            color="default"
+                        />
+                    </div>
+                )}
+
                 {/* Unified 2x2 Grid for Top Analysis Charts */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <HistoricalEquityChart trades={trades} />
-                    <SkewKurtosisChart trades={trades} />
+                    {/* Using simple DistributionChart as requested */}
+                    <DistributionChart 
+                        data={trades.map(t => t.pnl)} 
+                        title="PnL Distribution (Simplified)" 
+                        unit="$" 
+                        color="#3b82f6" 
+                    />
                     <ScatterPnLDuration trades={trades} />
                     <RegressionAnalysis trades={trades} />
+                    
+                    {/* Stretched (Stacked) Charts for V2 */}
+                    <div className="md:col-span-2 space-y-6">
+                        <ScatterMAEMFE trades={trades} />
+                        <UnderwaterChart trades={trades} />
+                    </div>
+
+                    <div className="md:col-span-2">
+                        <RollingStatsChart trades={trades} />
+                    </div>
                 </div>
 
                 {/* Full Width 3D Scatter */}
@@ -436,10 +502,10 @@ function App() {
                                      />
                                 </div>
                                 <div className="col-span-1">
-                                    <StatsCard title="Sharpe" value={mcStats.sharpeRatio.toFixed(2)} icon={Scale} color="default" />
+                                    <StatsCard title="Sim Sharpe" value={mcStats.sharpeRatio.toFixed(2)} icon={Scale} color="default" />
                                 </div>
                                 <div className="col-span-1">
-                                    <StatsCard title="Sortino" value={mcStats.sortinoRatio.toFixed(2)} icon={Scale} color="default" />
+                                    <StatsCard title="Sim Sortino" value={mcStats.sortinoRatio.toFixed(2)} icon={Scale} color="default" />
                                 </div>
                                 <div className="col-span-1">
                                     <StatsCard title="VaR 95%" value={`${mcStats.var95.toFixed(1)}%`} subValue="Risk" icon={ShieldAlert} color="warning" />
@@ -458,7 +524,7 @@ function App() {
                         
                         {/* Main Equity Curve */}
                         <div className="bg-surface rounded-xl p-4 border border-neutral-800 shadow-xl">
-                            <h4 className="text-neutral-300 text-sm font-semibold mb-4 ml-2">Simulated Equity Projections</h4>
+                            <h4 className="text-neutral-300 text-sm font-semibold mb-4 ml-2">Simulated Equity Projections {mcConfig.riskModel === 'percent_equity' && '(Compounding)'}</h4>
                             <EquityChart results={mcResults} limitLines={50} />
                         </div>
 

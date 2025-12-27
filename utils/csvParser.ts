@@ -71,6 +71,10 @@ const parseCustomSnakeCase = (lines: string[], colMap: Record<string, number>): 
         // Price data
         const entryPriceRaw = row[colMap['entry_price']];
         const exitPriceRaw = row[colMap['exit_price']];
+        
+        // MAE/MFE
+        const runUpRaw = row[colMap['run_up_usd']] || row[colMap['run_up']];
+        const drawDownRaw = row[colMap['drawdown_usd']] || row[colMap['drawdown']];
 
         if (!pnlRaw) continue;
 
@@ -97,6 +101,31 @@ const parseCustomSnakeCase = (lines: string[], colMap: Record<string, number>): 
                 pnlPercent = ((entryPrice - exitPrice) / entryPrice) * 100;
             }
         }
+        
+        // Parse MAE/MFE
+        let mfe: number | undefined;
+        let mae: number | undefined;
+        if (runUpRaw) {
+             mfe = parseFloat(runUpRaw.replace(/[$,]/g, ''));
+             if (isNaN(mfe)) mfe = undefined;
+        }
+        if (drawDownRaw) {
+             // MAE is a drawdown, so typically we want it negative for charts. 
+             // TV usually provides it as absolute USD.
+             const val = parseFloat(drawDownRaw.replace(/[$,]/g, ''));
+             if (!isNaN(val)) mae = -Math.abs(val); 
+        }
+
+        // Fallback: If no explicit MAE/MFE data, estimate from PnL (Min bound)
+        if (mfe === undefined && mae === undefined) {
+            if (pnl >= 0) {
+                mfe = pnl; // Best case: Price reached exit target
+                mae = 0;   // Best case: No drawdown
+            } else {
+                mfe = 0;   // Worst case: No profit excursion
+                mae = pnl; // Worst case: Drawdown equal to loss
+            }
+        }
 
         trades.push({
             id: (i).toString(),
@@ -106,7 +135,9 @@ const parseCustomSnakeCase = (lines: string[], colMap: Record<string, number>): 
             pnl,
             pnlPercent,
             entryPrice: isNaN(entryPrice) ? undefined : entryPrice,
-            exitPrice: isNaN(exitPrice) ? undefined : exitPrice
+            exitPrice: isNaN(exitPrice) ? undefined : exitPrice,
+            mae,
+            mfe
         });
     }
 
@@ -129,6 +160,11 @@ const parseStandardTradingView = (lines: string[], colMap: Record<string, number
     // Price variants
     const entryPriceCol = colMap['Price'] ?? colMap['Entry Price'];
     const exitPriceCol = colMap['Exit Price'];
+    
+    // MAE/MFE variants
+    // "Run-up USD" / "Drawdown USD"
+    const runUpCol = colMap['Run-up USD'];
+    const drawDownCol = colMap['Drawdown USD'];
 
     if (pnlCol === undefined) return [];
 
@@ -175,6 +211,30 @@ const parseStandardTradingView = (lines: string[], colMap: Record<string, number
                 const val = parseFloat(row[exitPriceCol].replace(/[$,]/g, ''));
                 if (!isNaN(val)) exitPrice = val;
             }
+            
+            // MAE / MFE
+            let mfe: number | undefined;
+            let mae: number | undefined;
+            
+            if (runUpCol !== undefined && row[runUpCol]) {
+                const val = parseFloat(row[runUpCol].replace(/[$,]/g, ''));
+                if (!isNaN(val)) mfe = val;
+            }
+            if (drawDownCol !== undefined && row[drawDownCol]) {
+                 const val = parseFloat(row[drawDownCol].replace(/[$,]/g, ''));
+                 if (!isNaN(val)) mae = -Math.abs(val); // Ensure negative
+            }
+
+            // Fallback: If no explicit MAE/MFE data, estimate from PnL (Min bound)
+            if (mfe === undefined && mae === undefined) {
+                if (pnl >= 0) {
+                    mfe = pnl; // Price reached at least the profit taken
+                    mae = 0;   // Assume perfect entry
+                } else {
+                    mfe = 0;   // Assume price went straight down
+                    mae = pnl; // Price dropped to at least the loss taken
+                }
+            }
 
             if (isNaN(pnl)) continue;
 
@@ -186,7 +246,9 @@ const parseStandardTradingView = (lines: string[], colMap: Record<string, number
                 pnl,
                 pnlPercent: isNaN(pnlPercent) ? 0 : pnlPercent,
                 entryPrice,
-                exitPrice
+                exitPrice,
+                mae,
+                mfe
             });
         }
     }

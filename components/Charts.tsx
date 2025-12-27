@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, TooltipProps, ScatterChart, Scatter, Cell, ReferenceLine
+  BarChart, Bar, TooltipProps, ScatterChart, Scatter, Cell, ReferenceLine, AreaChart, Area, Legend
 } from 'recharts';
 import { SimulationResult, Trade } from '../types';
-import { calculateDistributionStats } from '../utils/analytics';
+import { calculateRollingStats, calculateDistributionStats } from '../utils/analytics';
 import { AlertCircle } from 'lucide-react';
 
 interface EquityChartProps {
@@ -12,12 +12,12 @@ interface EquityChartProps {
   limitLines?: number;
 }
 
-const EquityCustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+const EquityCustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
-    const values = payload.map(p => p.value as number);
+    const values = payload.map((p: any) => p.value as number);
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const avg = values.reduce((a: number, b: number) => a + b, 0) / values.length;
 
     return (
       <div className="bg-surface border border-neutral-800 p-3 rounded shadow-lg text-sm">
@@ -102,7 +102,7 @@ interface DistributionChartProps {
   bins?: number;
 }
 
-const DistributionCustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+const DistributionCustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
@@ -180,8 +180,6 @@ export const DistributionChart: React.FC<DistributionChartProps> = ({
   );
 };
 
-// --- NEW CHARTS ---
-
 export const VaRCurveChart: React.FC<{ drawdowns: number[] }> = ({ drawdowns }) => {
     const data = useMemo(() => {
         if (!drawdowns.length) return [];
@@ -237,7 +235,6 @@ export const ScatterPnLDuration: React.FC<{ trades: Trade[] }> = ({ trades }) =>
              if (!isNaN(start) && !isNaN(end)) {
                  durationHours = (end - start) / (1000 * 60 * 60);
              }
-             // Allow 0 duration for scalp trades, but filter invalid dates
              if (durationHours < 0) return null; 
              
              return { x: durationHours, y: t.pnl, id: t.id, type: t.type };
@@ -333,67 +330,217 @@ export const HistoricalEquityChart: React.FC<{ trades: Trade[] }> = ({ trades })
 };
 
 export const SkewKurtosisChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
-  const data = useMemo(() => {
-    if (!trades.length) return { bins: [], stats: { skew: 0, kurtosis: 0 } };
-    
+  const { data, stats } = useMemo(() => {
     const pnls = trades.map(t => t.pnl);
-    const stats = calculateDistributionStats(pnls);
+    if(pnls.length === 0) return { data: [], stats: null };
 
-    // Create Histogram Bins
+    const stats = calculateDistributionStats(pnls);
     const min = Math.min(...pnls);
     const max = Math.max(...pnls);
-    const binCount = 30;
+    const binCount = 20;
     const step = (max - min) / binCount || 1;
-    
-    const bins = Array.from({ length: binCount }, (_, i) => ({
-      rangeStart: min + i * step,
-      rangeEnd: min + (i + 1) * step,
-      count: 0,
-      label: (min + i * step + step/2).toFixed(0) // midpoint
-    }));
 
-    pnls.forEach(val => {
-        const idx = Math.min(Math.floor((val - min) / step), binCount - 1);
-        if (idx >= 0) bins[idx].count++;
+    const bins = Array.from({ length: binCount }, (_, i) => {
+      const start = min + i * step;
+      const end = min + (i + 1) * step;
+      return {
+        rangeLabel: `$${Math.round(start)} - $${Math.round(end)}`,
+        count: 0,
+        mid: (start + end) / 2
+      };
     });
 
-    return { bins, stats };
+    pnls.forEach(val => {
+      const idx = Math.min(Math.floor((val - min) / step), binCount - 1);
+      if(idx >= 0) bins[idx].count++;
+    });
+
+    return { data: bins, stats };
   }, [trades]);
+
+  if (!stats) return <div className="h-[300px] flex items-center justify-center">No Data</div>;
 
   return (
     <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col">
-       <div className="flex justify-between items-center mb-2 px-2">
-            <h4 className="text-neutral-300 text-sm font-semibold">PnL Distribution</h4>
-            <div className="flex gap-4 text-xs">
-                <div className="flex flex-col items-end">
-                    <span className="text-neutral-500">Skewness</span>
-                    <span className={`font-mono font-bold ${data.stats.skew > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {data.stats.skew.toFixed(2)}
-                    </span>
+        <div className="flex justify-between items-start mb-4">
+             <h4 className="text-neutral-300 text-sm font-semibold">PnL Distribution</h4>
+             <div className="flex gap-4 text-xs">
+                <div className="text-right">
+                    <p className="text-neutral-500">Skew</p>
+                    <p className={`font-mono ${stats.skew > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{stats.skew.toFixed(2)}</p>
                 </div>
-                <div className="flex flex-col items-end">
-                    <span className="text-neutral-500">Exc. Kurtosis</span>
-                    <span className="font-mono font-bold text-blue-400">
-                        {data.stats.kurtosis.toFixed(2)}
-                    </span>
+                <div className="text-right">
+                    <p className="text-neutral-500">Kurtosis</p>
+                    <p className="font-mono text-neutral-200">{stats.kurtosis.toFixed(2)}</p>
                 </div>
-            </div>
-       </div>
-       <div className="flex-1 w-full min-h-0">
-         <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.bins} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333333" />
-                <XAxis dataKey="label" stroke="#666666" tick={{fontSize: 10}} />
-                <YAxis stroke="#666666" tick={{fontSize: 10}} />
-                <Tooltip 
-                    cursor={{fill: '#333333', opacity: 0.4}}
-                    contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
-                    labelFormatter={(l) => `PnL ~$${l}`}
-                />
-                <Bar dataKey="count" fill="#6366f1" radius={[2, 2, 0, 0]} />
-            </BarChart>
-         </ResponsiveContainer>
-       </div>
+             </div>
+        </div>
+        <div className="flex-1 w-full min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333333" />
+                    <XAxis dataKey="mid" stroke="#666666" tickFormatter={(v) => `$${Math.round(v)}`} tick={{fontSize: 10}} />
+                    <YAxis stroke="#666666" tick={{fontSize: 10}} />
+                    <Tooltip 
+                        contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                        formatter={(val, name, props) => [val, props.payload.rangeLabel]}
+                        labelFormatter={() => ''}
+                    />
+                    <ReferenceLine x={0} stroke="#666" strokeDasharray="3 3" />
+                    <Bar dataKey="count">
+                        {data.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.mid >= 0 ? '#10b981' : '#ef4444'} />
+                        ))}
+                    </Bar>
+                </BarChart>
+            </ResponsiveContainer>
+        </div>
+        <p className="text-[10px] text-neutral-500 text-center mt-2">
+            {stats.skew > 0 ? "Positive Skew: Frequent small losses, occasional large wins." : "Negative Skew: Frequent small wins, occasional large losses."}
+        </p>
     </div>
-  );
+  )
+};
+
+export const ScatterMAEMFE: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+    const data = useMemo(() => {
+        return trades
+            .filter(t => t.mae !== undefined) // Must have MAE
+            .map(t => ({
+                mae: t.mae,
+                mfe: t.mfe || 0,
+                pnl: t.pnl,
+                id: t.id
+            }));
+    }, [trades]);
+
+    if (data.length === 0) {
+        return (
+            <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col items-center justify-center text-neutral-500">
+                 <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
+                 <p className="text-sm">MAE/MFE data not found</p>
+                 <p className="text-xs mt-1 text-center">Ensure CSV has "Run-up USD" and "Drawdown USD" columns.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full min-h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col justify-center">
+             <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">PnL vs MAE (Adverse Excursion)</h4>
+             <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                        <XAxis 
+                            type="number" 
+                            dataKey="mae" 
+                            name="MAE" 
+                            unit="$" 
+                            stroke="#666666"
+                            label={{ value: 'MAE (Max Adverse Drawdown)', position: 'insideBottom', offset: -10, fill: '#666666' }}
+                        />
+                        <YAxis 
+                            type="number" 
+                            dataKey="pnl" 
+                            name="PnL" 
+                            unit="$" 
+                            stroke="#666666"
+                            label={{ value: 'Realized PnL', angle: -90, position: 'insideLeft', fill: '#666666' }}
+                        />
+                        <Tooltip 
+                            cursor={{ strokeDasharray: '3 3' }}
+                            contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                        />
+                        <Scatter name="Trades" data={data} fill="#8884d8">
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                            ))}
+                        </Scatter>
+                    </ScatterChart>
+                </ResponsiveContainer>
+             </div>
+        </div>
+    );
+};
+
+export const UnderwaterChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+    const data = useMemo(() => {
+        let equity = 0;
+        let peak = 0;
+        return trades.map((t, i) => {
+            equity += t.pnl;
+            if (equity > peak) peak = equity;
+            // Handle negative equity start (drawdown from 0 or peak)
+            // Usually underwater is % from peak equity. Assuming start at 0 is tricky for %.
+            // Let's assume absolute drawdown first, or relative to a theoretical starting balance of 0?
+            // Actually, underwater is typically % from Peak. If Peak is 0, DD is 0.
+            // If Peak goes to 1000, then drops to 800, DD is 20%.
+            // If we start at 0, peak is 0. If we go to -100, is that infinite DD?
+            // Let's simulate a starting balance large enough to measure % properly, or just use absolute value?
+            // Prompt asked for "Percentage from Peak".
+            // Let's use a virtual starting balance of $100k for calculation stability or just 0 based.
+            // If we assume the historical equity starts at $0, percentage doesn't make sense if peak is 0.
+            // Let's treat the equity curve as adding to a base (e.g. user config or arbitrary 100k).
+            // Better: Just use 0-based absolute DD, or if we want %, we need a base.
+            // Let's use absolute drawdown for historical as it's safer without knowing account size.
+            // Wait, the prompt specifically asked for Percentage.
+            // "((equity - peak) / peak) * 100". This implies Peak > 0.
+            
+            // Hack: Use the first trade's cumulative + some buffer or just track peak of cumulative PnL.
+            // If cumulative PnL starts negative, Peak is 0.
+            // Let's simply offset the whole curve by a large number (e.g. 100,000) to emulate a funded account.
+            const syntheticBase = 100000;
+            const currentTotal = syntheticBase + equity;
+            const peakTotal = syntheticBase + peak; // Peak of PnL + Base
+            
+            const dd = ((currentTotal - peakTotal) / peakTotal) * 100;
+            
+            return {
+                index: i,
+                drawdown: dd
+            };
+        });
+    }, [trades]);
+
+    return (
+        <div className="h-[250px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+             <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Underwater Plot (Drawdown %)</h4>
+             <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={data}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                    <XAxis dataKey="index" stroke="#666666" hide />
+                    <YAxis stroke="#666666" tickFormatter={(val) => `${val.toFixed(1)}%`} />
+                    <Tooltip 
+                        contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                        formatter={(val: number) => [`${val.toFixed(2)}%`, 'Drawdown']}
+                    />
+                    <Area type="monotone" dataKey="drawdown" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
+                </AreaChart>
+             </ResponsiveContainer>
+        </div>
+    );
+};
+
+export const RollingStatsChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+    const data = useMemo(() => calculateRollingStats(trades, 50), [trades]);
+
+    if (data.length === 0) return null;
+
+    return (
+        <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+            <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Rolling 50-Trade Stats</h4>
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                    <XAxis dataKey="index" stroke="#666666" />
+                    <YAxis yAxisId="left" stroke="#3b82f6" tickFormatter={(val) => `${val}%`} domain={[0, 100]} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#10b981" />
+                    <Tooltip contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }} />
+                    <Legend />
+                    <Line yAxisId="left" type="monotone" dataKey="winRate" name="Win Rate %" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                    <Line yAxisId="right" type="monotone" dataKey="sharpe" name="Sharpe Ratio" stroke="#10b981" dot={false} strokeWidth={2} />
+                </LineChart>
+            </ResponsiveContainer>
+        </div>
+    );
 };

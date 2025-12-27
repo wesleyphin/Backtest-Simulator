@@ -90,9 +90,10 @@ export const runPropFirmSimulation = (
         // Blown by DLL
         if (phase === 'EVAL') {
           evalBlown++;
-          phase = 'EVAL'; // Restart
-          balance = config.accountSize;
-          evalProfitProgress = 0;
+          // Restart logic
+          phase = 'EVAL'; 
+          balance = config.accountSize; // Reset Balance
+          evalProfitProgress = 0; // Reset Progress
           evalAttempts++;
           totalAttempts++;
           if (!hasReachedExpress) attemptsToReachExpress++;
@@ -103,12 +104,12 @@ export const runPropFirmSimulation = (
           if (hasReachedFirstPayout) blownAfterFirstPayout++;
           // Restart from Step 1
           phase = 'EVAL'; 
-          balance = config.accountSize;
-          evalProfitProgress = 0;
+          balance = config.accountSize; // Reset Balance
+          evalProfitProgress = 0; // Reset Progress
           expressPayoutsCount = 0;
           expressDaysAboveThreshold = 0;
-          evalAttempts++; // New eval attempt
-          expressAttempts++; // Technically we finished an express attempt
+          evalAttempts++; 
+          expressAttempts++; 
           totalAttempts++;
           
           if (!hasReachedFirstPayout) attemptsToReachFirstPayout++;
@@ -128,8 +129,8 @@ export const runPropFirmSimulation = (
         if (phase === 'EVAL') {
           evalBlown++;
           phase = 'EVAL';
-          balance = config.accountSize;
-          evalProfitProgress = 0;
+          balance = config.accountSize; // Reset Balance
+          evalProfitProgress = 0; // Reset Progress
           evalAttempts++;
           totalAttempts++;
           if (!hasReachedExpress) attemptsToReachExpress++;
@@ -139,8 +140,8 @@ export const runPropFirmSimulation = (
           expressBlown++;
           if (hasReachedFirstPayout) blownAfterFirstPayout++;
           phase = 'EVAL';
-          balance = config.accountSize;
-          evalProfitProgress = 0;
+          balance = config.accountSize; // Reset Balance
+          evalProfitProgress = 0; // Reset Progress
           expressPayoutsCount = 0;
           expressDaysAboveThreshold = 0;
           evalAttempts++;
@@ -157,16 +158,24 @@ export const runPropFirmSimulation = (
 
       if (phase === 'EVAL') {
         // Profit Target Logic
-        // "Maximum profit of $1500 a day for eval phase" counting towards target
-        const contribution = Math.min(Math.max(0, dailyPnL), config.maxDailyProfitEval);
-        evalProfitProgress += contribution;
+        // We apply the "Consistency Rule" (Max Daily contribution) BUT we must account for losses (Net PnL).
+        // If daily PnL is negative, it fully deducts from progress.
+        // If daily PnL is positive, it is capped by maxDailyProfitEval.
+        
+        let dailyContribution = dailyPnL;
+        if (dailyContribution > config.maxDailyProfitEval) {
+            dailyContribution = config.maxDailyProfitEval;
+        }
+        
+        evalProfitProgress += dailyContribution;
 
         if (evalProfitProgress >= config.profitTargetEval) {
           // Passed Eval
           evalPassed++;
           phase = 'EXPRESS';
           expressAttempts++;
-          balance = config.accountSize; // Reset balance for next phase? Usually yes.
+          balance = config.accountSize; // Reset Balance for new Phase
+          evalProfitProgress = 0;
           expressDaysAboveThreshold = 0;
           expressPayoutsCount = 0;
           
