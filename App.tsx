@@ -18,7 +18,8 @@ import {
   ArrowDown,
   Gauge,
   Trophy,
-  Target
+  Target,
+  BrainCircuit
 } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import StatsCard from './components/StatsCard';
@@ -31,12 +32,14 @@ import {
     ScatterMAEMFE,
     UnderwaterChart,
     RollingStatsChart,
-    SkewKurtosisChart 
+    SkewKurtosisChart,
+    StreakProbabilityChart
 } from './components/Charts';
 import RegressionAnalysis from './components/RegressionAnalysis';
 import ThreeDScatter from './components/ThreeDScatter';
 import ProbabilityHeatmap from './components/ProbabilityHeatmap';
 import PropFirmDashboard from './components/PropFirmDashboard';
+import AIReportCard from './components/AIReportCard'; // Import AI Component
 import { parseTradingViewCSV } from './utils/csvParser';
 import { runSimulationBatch, calculateStatistics, createPRNG } from './utils/monteCarlo';
 import { runPropFirmSimulation } from './utils/propFirmLogic';
@@ -408,7 +411,7 @@ function App() {
             </div>
 
             {/* --- MAIN CONTENT --- */}
-            <div className="lg:col-span-3 space-y-12">
+            <div className="lg:col-span-3 space-y-8">
               
               {/* SECTION 1: DATA ANALYSIS */}
               <section className="space-y-6">
@@ -448,31 +451,34 @@ function App() {
                     </div>
                 )}
 
-                {/* Unified 2x2 Grid for Top Analysis Charts */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ROW 1: Equity & Distribution (Equal Height Side-by-Side) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                     <HistoricalEquityChart trades={trades} />
-                    {/* Using simple DistributionChart as requested */}
                     <DistributionChart 
                         data={trades.map(t => t.pnl)} 
                         title="PnL Distribution (Simplified)" 
                         unit="$" 
                         color="#3b82f6" 
                     />
-                    <ScatterPnLDuration trades={trades} />
-                    <RegressionAnalysis trades={trades} />
-                    
-                    {/* Stretched (Stacked) Charts for V2 */}
-                    <div className="md:col-span-2 space-y-6">
-                        <ScatterMAEMFE trades={trades} />
-                        <UnderwaterChart trades={trades} />
-                    </div>
-
-                    <div className="md:col-span-2">
-                        <RollingStatsChart trades={trades} />
-                    </div>
                 </div>
 
-                {/* Full Width 3D Scatter */}
+                {/* ROW 2: Regression & MAE/MFE */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                    <RegressionAnalysis trades={trades} />
+                    <ScatterMAEMFE trades={trades} />
+                </div>
+                
+                {/* ROW 3: Rolling Stats (Full Width) */}
+                <div className="w-full">
+                     <RollingStatsChart trades={trades} />
+                </div>
+
+                {/* ROW 4: Underwater (Full Width) */}
+                <div className="w-full">
+                    <UnderwaterChart trades={trades} />
+                </div>
+
+                {/* ROW 5: Full Width 3D Scatter */}
                 <div className="w-full">
                     <ThreeDScatter trades={trades} />
                 </div>
@@ -533,8 +539,15 @@ function App() {
                             <ProbabilityHeatmap results={mcResults} />
                         </div>
 
+                        {/* Streak Probability Analysis (NEW) */}
+                        {historicalStats && (
+                            <div className="w-full">
+                                <StreakProbabilityChart results={mcResults} winRate={historicalStats.winRate} />
+                            </div>
+                        )}
+
                         {/* Distributions Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                             <DistributionChart 
                                 data={mcResults.map(r => r.finalEquity)} 
                                 title="Ending Equity Distribution" 
@@ -588,6 +601,23 @@ function App() {
                         <p className="text-xs mt-2 text-neutral-600">Will run automatically after main simulation.</p>
                     </div>
                 )}
+              </section>
+
+               {/* SECTION 4: AI ANALYSIS */}
+              <section className="space-y-6">
+                 <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                    <BrainCircuit className="text-purple-500 w-5 h-5" />
+                    <h2 className="text-xl font-bold">4. AI Strategy Report</h2>
+                </div>
+                
+                <div className="w-full">
+                    <AIReportCard 
+                        trades={trades}
+                        historicalStats={historicalStats} 
+                        mcStats={mcStats} 
+                        mcConfig={mcConfig} 
+                    />
+                </div>
               </section>
 
             </div>

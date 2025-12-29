@@ -1,13 +1,17 @@
 import React, { useMemo } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, TooltipProps, ScatterChart, Scatter, Cell, ReferenceLine, AreaChart, Area, Legend
+  BarChart, Bar, TooltipProps, ScatterChart, Scatter, Cell, ReferenceLine, AreaChart, Area, Legend, ComposedChart
 } from 'recharts';
 import { SimulationResult, Trade } from '../types';
 import { calculateRollingStats, calculateDistributionStats } from '../utils/analytics';
 import { AlertCircle } from 'lucide-react';
 
-interface EquityChartProps {
+interface BaseChartProps {
+    className?: string;
+}
+
+interface EquityChartProps extends BaseChartProps {
   results: SimulationResult[];
   limitLines?: number;
 }
@@ -33,7 +37,7 @@ const EquityCustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export const EquityChart: React.FC<EquityChartProps> = ({ results, limitLines = 50 }) => {
+export const EquityChart: React.FC<EquityChartProps> = ({ results, limitLines = 50, className }) => {
   const displayResults = results.slice(0, limitLines);
   
   const data = useMemo(() => {
@@ -54,10 +58,10 @@ export const EquityChart: React.FC<EquityChartProps> = ({ results, limitLines = 
     return chartData;
   }, [displayResults]);
 
-  if (results.length === 0) return <div className="h-64 flex items-center justify-center text-neutral-500">No Data</div>;
+  if (results.length === 0) return <div className={`flex items-center justify-center text-neutral-500 ${className || 'h-64'}`}>No Data</div>;
 
   return (
-    <div className="h-[400px] w-full">
+    <div className={`w-full ${className || 'h-80'}`}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#333333" vertical={false} />
@@ -94,7 +98,7 @@ export const EquityChart: React.FC<EquityChartProps> = ({ results, limitLines = 
   );
 };
 
-interface DistributionChartProps {
+interface DistributionChartProps extends BaseChartProps {
   data: number[];
   title: string;
   unit?: string;
@@ -122,7 +126,8 @@ export const DistributionChart: React.FC<DistributionChartProps> = ({
   title, 
   unit = '', 
   color = '#10b981',
-  bins: binCount = 20
+  bins: binCount = 20,
+  className
 }) => {
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
@@ -157,30 +162,32 @@ export const DistributionChart: React.FC<DistributionChartProps> = ({
     return bins;
   }, [data, unit, binCount]);
 
-  if (data.length === 0) return <div className="h-48 flex items-center justify-center text-neutral-500">No Data</div>;
+  if (data.length === 0) return <div className={`flex items-center justify-center text-neutral-500 ${className || 'h-64'}`}>No Data</div>;
 
   return (
-    <div className="h-[250px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+    <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
       <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">{title}</h4>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333333" />
-          <XAxis 
-            dataKey="label" 
-            stroke="#666666" 
-            tick={{fontSize: 10}}
-            interval="preserveStartEnd"
-          />
-          <YAxis stroke="#666666" tick={{fontSize: 10}} />
-          <Tooltip content={<DistributionCustomTooltip />} cursor={{fill: '#333333', opacity: 0.4}} />
-          <Bar dataKey="count" fill={color} radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      <div className="flex-1 w-full min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333333" />
+            <XAxis 
+                dataKey="label" 
+                stroke="#666666" 
+                tick={{fontSize: 10}}
+                interval="preserveStartEnd"
+            />
+            <YAxis stroke="#666666" tick={{fontSize: 10}} />
+            <Tooltip content={<DistributionCustomTooltip />} cursor={{fill: '#333333', opacity: 0.4}} />
+            <Bar dataKey="count" fill={color} radius={[4, 4, 0, 0]} />
+            </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 };
 
-export const VaRCurveChart: React.FC<{ drawdowns: number[] }> = ({ drawdowns }) => {
+export const VaRCurveChart: React.FC<{ drawdowns: number[], className?: string }> = ({ drawdowns, className }) => {
     const data = useMemo(() => {
         if (!drawdowns.length) return [];
         const sorted = [...drawdowns].sort((a, b) => a - b);
@@ -197,36 +204,38 @@ export const VaRCurveChart: React.FC<{ drawdowns: number[] }> = ({ drawdowns }) 
     }, [drawdowns]);
 
     return (
-        <div className="h-[250px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
              <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Value at Risk (VaR) Curve</h4>
-             <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                    <XAxis 
-                        dataKey="confidence" 
-                        label={{ value: 'Confidence Level (%)', position: 'insideBottom', offset: -5, fill: '#666666' }}
-                        stroke="#666666"
-                        type="number"
-                        domain={[50, 100]}
-                    />
-                    <YAxis 
-                        label={{ value: 'Max Drawdown (%)', angle: -90, position: 'insideLeft', fill: '#666666' }}
-                        stroke="#666666"
-                    />
-                    <Tooltip 
-                        contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
-                        itemStyle={{ color: '#fbbf24' }}
-                        formatter={(val: number) => [`${val.toFixed(2)}%`, 'Max Drawdown']}
-                        labelFormatter={(label) => `Confidence: ${label}%`}
-                    />
-                    <Line type="monotone" dataKey="drawdown" stroke="#fbbf24" strokeWidth={2} dot={false} />
-                </LineChart>
-             </ResponsiveContainer>
+             <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                        <XAxis 
+                            dataKey="confidence" 
+                            label={{ value: 'Confidence Level (%)', position: 'insideBottom', offset: -5, fill: '#666666' }}
+                            stroke="#666666"
+                            type="number"
+                            domain={[50, 100]}
+                        />
+                        <YAxis 
+                            label={{ value: 'Max Drawdown (%)', angle: -90, position: 'insideLeft', fill: '#666666' }}
+                            stroke="#666666"
+                        />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                            itemStyle={{ color: '#fbbf24' }}
+                            formatter={(val: number) => [`${val.toFixed(2)}%`, 'Max Drawdown']}
+                            labelFormatter={(label) => `Confidence: ${label}%`}
+                        />
+                        <Line type="monotone" dataKey="drawdown" stroke="#fbbf24" strokeWidth={2} dot={false} />
+                    </LineChart>
+                </ResponsiveContainer>
+             </div>
         </div>
     );
 };
 
-export const ScatterPnLDuration: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+export const ScatterPnLDuration: React.FC<{ trades: Trade[], className?: string }> = ({ trades, className }) => {
     const data = useMemo(() => {
         return trades.map((t, i) => {
              const start = new Date(t.entryTime).getTime();
@@ -242,7 +251,7 @@ export const ScatterPnLDuration: React.FC<{ trades: Trade[] }> = ({ trades }) =>
     }, [trades]);
 
     return (
-        <div className="h-full min-h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col justify-center">
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col justify-center ${className || 'h-80'}`}>
              <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">PnL vs Duration</h4>
              {data.length > 0 ? (
                  <div className="flex-1 w-full min-h-0">
@@ -288,7 +297,7 @@ export const ScatterPnLDuration: React.FC<{ trades: Trade[] }> = ({ trades }) =>
     );
 };
 
-export const HistoricalEquityChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+export const HistoricalEquityChart: React.FC<{ trades: Trade[], className?: string }> = ({ trades, className }) => {
     const data = useMemo(() => {
         let cumulative = 0;
         return trades.map((t, i) => {
@@ -302,34 +311,36 @@ export const HistoricalEquityChart: React.FC<{ trades: Trade[] }> = ({ trades })
     }, [trades]);
 
     return (
-        <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
             <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Realized Historical Equity</h4>
-            <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                    <XAxis 
-                        dataKey="index" 
-                        stroke="#666666"
-                        tick={{fontSize: 10}}
-                    />
-                    <YAxis 
-                        stroke="#666666"
-                        tick={{fontSize: 10}}
-                        tickFormatter={(val) => `$${val}`}
-                    />
-                    <Tooltip 
-                        contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
-                        formatter={(val: number) => [`$${val.toLocaleString()}`, 'Equity']}
-                    />
-                    <ReferenceLine y={0} stroke="#666" />
-                    <Line type="monotone" dataKey="equity" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                </LineChart>
-            </ResponsiveContainer>
+            <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                        <XAxis 
+                            dataKey="index" 
+                            stroke="#666666"
+                            tick={{fontSize: 10}}
+                        />
+                        <YAxis 
+                            stroke="#666666"
+                            tick={{fontSize: 10}}
+                            tickFormatter={(val) => `$${val}`}
+                        />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                            formatter={(val: number) => [`$${val.toLocaleString()}`, 'Equity']}
+                        />
+                        <ReferenceLine y={0} stroke="#666" />
+                        <Line type="monotone" dataKey="equity" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                    </LineChart>
+                </ResponsiveContainer>
+            </div>
         </div>
     );
 };
 
-export const SkewKurtosisChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+export const SkewKurtosisChart: React.FC<{ trades: Trade[], className?: string }> = ({ trades, className }) => {
   const { data, stats } = useMemo(() => {
     const pnls = trades.map(t => t.pnl);
     if(pnls.length === 0) return { data: [], stats: null };
@@ -358,10 +369,10 @@ export const SkewKurtosisChart: React.FC<{ trades: Trade[] }> = ({ trades }) => 
     return { data: bins, stats };
   }, [trades]);
 
-  if (!stats) return <div className="h-[300px] flex items-center justify-center">No Data</div>;
+  if (!stats) return <div className={`flex items-center justify-center ${className || 'h-64'}`}>No Data</div>;
 
   return (
-    <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col">
+    <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
         <div className="flex justify-between items-start mb-4">
              <h4 className="text-neutral-300 text-sm font-semibold">PnL Distribution</h4>
              <div className="flex gap-4 text-xs">
@@ -402,7 +413,7 @@ export const SkewKurtosisChart: React.FC<{ trades: Trade[] }> = ({ trades }) => 
   )
 };
 
-export const ScatterMAEMFE: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+export const ScatterMAEMFE: React.FC<{ trades: Trade[], className?: string }> = ({ trades, className }) => {
     const data = useMemo(() => {
         return trades
             .filter(t => t.mae !== undefined) // Must have MAE
@@ -416,7 +427,7 @@ export const ScatterMAEMFE: React.FC<{ trades: Trade[] }> = ({ trades }) => {
 
     if (data.length === 0) {
         return (
-            <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col items-center justify-center text-neutral-500">
+            <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col items-center justify-center text-neutral-500 ${className || 'h-80'}`}>
                  <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
                  <p className="text-sm">MAE/MFE data not found</p>
                  <p className="text-xs mt-1 text-center">Ensure CSV has "Run-up USD" and "Drawdown USD" columns.</p>
@@ -425,7 +436,7 @@ export const ScatterMAEMFE: React.FC<{ trades: Trade[] }> = ({ trades }) => {
     }
 
     return (
-        <div className="h-full min-h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col justify-center">
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col justify-center ${className || 'h-80'}`}>
              <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">PnL vs MAE (Adverse Excursion)</h4>
              <div className="flex-1 w-full min-h-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -463,35 +474,16 @@ export const ScatterMAEMFE: React.FC<{ trades: Trade[] }> = ({ trades }) => {
     );
 };
 
-export const UnderwaterChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+export const UnderwaterChart: React.FC<{ trades: Trade[], className?: string }> = ({ trades, className }) => {
     const data = useMemo(() => {
         let equity = 0;
         let peak = 0;
         return trades.map((t, i) => {
             equity += t.pnl;
             if (equity > peak) peak = equity;
-            // Handle negative equity start (drawdown from 0 or peak)
-            // Usually underwater is % from peak equity. Assuming start at 0 is tricky for %.
-            // Let's assume absolute drawdown first, or relative to a theoretical starting balance of 0?
-            // Actually, underwater is typically % from Peak. If Peak is 0, DD is 0.
-            // If Peak goes to 1000, then drops to 800, DD is 20%.
-            // If we start at 0, peak is 0. If we go to -100, is that infinite DD?
-            // Let's simulate a starting balance large enough to measure % properly, or just use absolute value?
-            // Prompt asked for "Percentage from Peak".
-            // Let's use a virtual starting balance of $100k for calculation stability or just 0 based.
-            // If we assume the historical equity starts at $0, percentage doesn't make sense if peak is 0.
-            // Let's treat the equity curve as adding to a base (e.g. user config or arbitrary 100k).
-            // Better: Just use 0-based absolute DD, or if we want %, we need a base.
-            // Let's use absolute drawdown for historical as it's safer without knowing account size.
-            // Wait, the prompt specifically asked for Percentage.
-            // "((equity - peak) / peak) * 100". This implies Peak > 0.
-            
-            // Hack: Use the first trade's cumulative + some buffer or just track peak of cumulative PnL.
-            // If cumulative PnL starts negative, Peak is 0.
-            // Let's simply offset the whole curve by a large number (e.g. 100,000) to emulate a funded account.
             const syntheticBase = 100000;
             const currentTotal = syntheticBase + equity;
-            const peakTotal = syntheticBase + peak; // Peak of PnL + Base
+            const peakTotal = syntheticBase + peak; 
             
             const dd = ((currentTotal - peakTotal) / peakTotal) * 100;
             
@@ -503,44 +495,114 @@ export const UnderwaterChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
     }, [trades]);
 
     return (
-        <div className="h-[250px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
              <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Underwater Plot (Drawdown %)</h4>
-             <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                    <XAxis dataKey="index" stroke="#666666" hide />
-                    <YAxis stroke="#666666" tickFormatter={(val) => `${val.toFixed(1)}%`} />
-                    <Tooltip 
-                        contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
-                        formatter={(val: number) => [`${val.toFixed(2)}%`, 'Drawdown']}
-                    />
-                    <Area type="monotone" dataKey="drawdown" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
-                </AreaChart>
-             </ResponsiveContainer>
+             <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                        <XAxis dataKey="index" stroke="#666666" hide />
+                        <YAxis stroke="#666666" tickFormatter={(val) => `${val.toFixed(1)}%`} />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                            formatter={(val: number) => [`${val.toFixed(2)}%`, 'Drawdown']}
+                        />
+                        <Area type="monotone" dataKey="drawdown" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
+                    </AreaChart>
+                </ResponsiveContainer>
+             </div>
         </div>
     );
 };
 
-export const RollingStatsChart: React.FC<{ trades: Trade[] }> = ({ trades }) => {
+export const RollingStatsChart: React.FC<{ trades: Trade[], className?: string }> = ({ trades, className }) => {
     const data = useMemo(() => calculateRollingStats(trades, 50), [trades]);
 
     if (data.length === 0) return null;
 
     return (
-        <div className="h-[300px] w-full bg-surface border border-neutral-800 rounded-xl p-4">
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
             <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Rolling 50-Trade Stats</h4>
-            <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                    <XAxis dataKey="index" stroke="#666666" />
-                    <YAxis yAxisId="left" stroke="#3b82f6" tickFormatter={(val) => `${val}%`} domain={[0, 100]} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#10b981" />
-                    <Tooltip contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }} />
-                    <Legend />
-                    <Line yAxisId="left" type="monotone" dataKey="winRate" name="Win Rate %" stroke="#3b82f6" dot={false} strokeWidth={2} />
-                    <Line yAxisId="right" type="monotone" dataKey="sharpe" name="Sharpe Ratio" stroke="#10b981" dot={false} strokeWidth={2} />
-                </LineChart>
-            </ResponsiveContainer>
+            <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+                        <XAxis dataKey="index" stroke="#666666" />
+                        <YAxis yAxisId="left" stroke="#3b82f6" tickFormatter={(val) => `${val}%`} domain={[0, 100]} />
+                        <YAxis yAxisId="right" orientation="right" stroke="#10b981" />
+                        <Tooltip contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }} />
+                        <Legend />
+                        <Line yAxisId="left" type="monotone" dataKey="winRate" name="Win Rate %" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                        <Line yAxisId="right" type="monotone" dataKey="sharpe" name="Sharpe Ratio" stroke="#10b981" dot={false} strokeWidth={2} />
+                    </LineChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
+export const StreakProbabilityChart: React.FC<{ results: SimulationResult[], winRate: number, className?: string }> = ({ results, winRate, className }) => {
+    const data = useMemo(() => {
+        if (!results.length) return [];
+        const counts = new Map<number, number>();
+        let maxObservedStreak = 0;
+
+        results.forEach(r => {
+            const streak = r.maxConsecutiveLosses;
+            counts.set(streak, (counts.get(streak) || 0) + 1);
+            if (streak > maxObservedStreak) maxObservedStreak = streak;
+        });
+
+        const chartData = [];
+        const lossRate = 1 - (winRate / 100);
+        const displayLimit = Math.max(10, Math.min(maxObservedStreak + 2, 20));
+
+        for (let i = 1; i <= displayLimit; i++) {
+            const count = counts.get(i) || 0;
+            const frequency = (count / results.length) * 100;
+            const theoretical = Math.pow(lossRate, i) * 100;
+
+            chartData.push({
+                streak: i,
+                empirical: frequency,
+                theoretical: theoretical
+            });
+        }
+        return chartData;
+    }, [results, winRate]);
+
+    if (!results.length) return null;
+
+    return (
+        <div className={`w-full bg-surface border border-neutral-800 rounded-xl p-4 flex flex-col ${className || 'h-80'}`}>
+             <h4 className="text-neutral-300 text-sm font-semibold mb-4 text-center">Streak Probability: Actual vs Theoretical</h4>
+             <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333333" vertical={false} />
+                        <XAxis 
+                            dataKey="streak" 
+                            stroke="#666666"
+                            label={{ value: 'Consecutive Losses (N)', position: 'insideBottom', offset: -5, fill: '#666666' }}
+                        />
+                        <YAxis 
+                            stroke="#666666" 
+                            tickFormatter={(v) => `${v.toFixed(1)}%`}
+                            label={{ value: 'Frequency / Probability', angle: -90, position: 'insideLeft', fill: '#666666' }}
+                        />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#0a0a0a', borderColor: '#333' }}
+                            formatter={(val: number, name: string) => [`${val.toFixed(2)}%`, name === 'empirical' ? 'MC Actuals' : 'Theoretical (1-WR)^N']}
+                        />
+                        <Legend />
+                        <Bar dataKey="empirical" name="MC Actuals" fill="#ef4444" barSize={20} radius={[4, 4, 0, 0]} />
+                        <Line type="monotone" dataKey="theoretical" name="Theoretical Math" stroke="#3b82f6" strokeWidth={2} dot={{r: 4}} />
+                    </ComposedChart>
+                </ResponsiveContainer>
+             </div>
+             <p className="text-[10px] text-neutral-500 text-center mt-2">
+                 If Red Bars (Actual) > Blue Line (Theory), losses are clustering more than random chance (tilt risk).
+             </p>
         </div>
     );
 };

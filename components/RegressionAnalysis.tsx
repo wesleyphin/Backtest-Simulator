@@ -8,6 +8,7 @@ import { Microscope, Info, Filter, BarChart2, ArrowLeftRight } from 'lucide-reac
 
 interface Props {
   trades: Trade[];
+  className?: string;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -27,7 +28,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const RegressionAnalysis: React.FC<Props> = ({ trades }) => {
+const RegressionAnalysis: React.FC<Props> = ({ trades, className }) => {
   const [tab, setTab] = useState<'all' | 'long' | 'short'>('all');
   const [view, setView] = useState<'correlation' | 'importance'>('correlation');
 
@@ -37,7 +38,7 @@ const RegressionAnalysis: React.FC<Props> = ({ trades }) => {
 
   if (trades.length < 5) {
     return (
-      <div className="bg-surface rounded-xl p-6 border border-neutral-800 flex flex-col items-center justify-center text-neutral-500 min-h-[300px]">
+      <div className={`bg-surface rounded-xl p-6 border border-neutral-800 flex flex-col items-center justify-center text-neutral-500 ${className || 'h-80'}`}>
         <Microscope className="w-12 h-12 mb-4 opacity-50" />
         <p>Insufficient data for regression analysis.</p>
         <p className="text-sm">Need at least 5 trades.</p>
@@ -46,7 +47,7 @@ const RegressionAnalysis: React.FC<Props> = ({ trades }) => {
   }
 
   return (
-    <div className="bg-surface rounded-xl p-6 border border-neutral-800 shadow-xl h-full flex flex-col">
+    <div className={`bg-surface rounded-xl p-6 border border-neutral-800 shadow-xl flex flex-col ${className || 'h-80'}`}>
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-start justify-between">
             <div>
@@ -93,7 +94,7 @@ const RegressionAnalysis: React.FC<Props> = ({ trades }) => {
         </div>
       </div>
 
-      <div className="flex-1 min-h-[250px] flex flex-col">
+      <div className="flex-1 min-h-0 flex flex-col">
          {currentData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
                 <BarChart 

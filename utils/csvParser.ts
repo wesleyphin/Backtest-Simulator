@@ -42,18 +42,86 @@ export const parseTradingViewCSV = (csvContent: string): Trade[] => {
   // Detect Format Strategy
   if (colMap['net_pnl'] !== undefined) {
      return parseCustomSnakeCase(lines, colMap);
+  } else if (colMap['EnteredAt'] !== undefined && colMap['PnL'] !== undefined) {
+     return parseCustomGenericCsv(lines, colMap);
   } else if (colMap['Net P&L USD'] !== undefined || colMap['Profit USD'] !== undefined) {
      return parseStandardTradingView(lines, colMap);
   } else {
      // Try to be lenient and look for just PnL column
-     const pnlCol = Object.keys(colMap).find(k => k.toLowerCase().includes('p&l') || k.toLowerCase().includes('profit'));
+     const pnlCol = Object.keys(colMap).find(k => k.toLowerCase().includes('p&l') || k.toLowerCase().includes('profit') || k === 'PnL');
      if (pnlCol) {
          return parseStandardTradingView(lines, colMap); // Attempt standard
      }
      
      console.error("Unknown CSV format. Headers found:", headers);
-     throw new Error(`Invalid CSV format. Could not detect PnL column (e.g. 'net_pnl' or 'Net P&L USD').`);
+     throw new Error(`Invalid CSV format. Could not detect PnL column (e.g. 'net_pnl', 'PnL', or 'Net P&L USD').`);
   }
+};
+
+const parseCustomGenericCsv = (lines: string[], colMap: Record<string, number>): Trade[] => {
+    const trades: Trade[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const row = parseCSVRow(lines[i]);
+        if (row.length < Object.keys(colMap).length * 0.5) continue;
+
+        const id = row[colMap['Id']];
+        const pnlRaw = row[colMap['PnL']];
+        const entryTime = row[colMap['EnteredAt']] || '';
+        const exitTime = row[colMap['ExitedAt']] || '';
+        const entryPriceRaw = row[colMap['EntryPrice']];
+        const exitPriceRaw = row[colMap['ExitPrice']];
+        const typeRaw = row[colMap['Type']];
+
+        if (!pnlRaw) continue;
+
+        const pnl = parseFloat(pnlRaw.replace(/[$,]/g, ''));
+        if (isNaN(pnl)) continue;
+
+        const entryPrice = parseFloat(entryPriceRaw);
+        const exitPrice = parseFloat(exitPriceRaw);
+
+        let type: 'Long' | 'Short' = 'Long';
+        if (typeRaw && typeRaw.toLowerCase().includes('short')) {
+            type = 'Short';
+        }
+
+        let pnlPercent = 0;
+        if (!isNaN(entryPrice) && !isNaN(exitPrice) && entryPrice !== 0) {
+            if (type === 'Long') {
+                pnlPercent = ((exitPrice - entryPrice) / entryPrice) * 100;
+            } else {
+                pnlPercent = ((entryPrice - exitPrice) / entryPrice) * 100;
+            }
+        }
+
+        // Fallback MAE/MFE as they are not explicitly in this format
+        let mfe: number | undefined = undefined;
+        let mae: number | undefined = undefined;
+        
+        if (pnl >= 0) {
+            mfe = pnl;
+            mae = 0;
+        } else {
+            mfe = 0;
+            mae = pnl;
+        }
+
+        trades.push({
+            id: id || i.toString(),
+            entryTime,
+            exitTime,
+            type,
+            pnl,
+            pnlPercent,
+            entryPrice: isNaN(entryPrice) ? undefined : entryPrice,
+            exitPrice: isNaN(exitPrice) ? undefined : exitPrice,
+            mae,
+            mfe
+        });
+    }
+
+    return trades;
 };
 
 const parseCustomSnakeCase = (lines: string[], colMap: Record<string, number>): Trade[] => {
@@ -148,18 +216,21 @@ const parseStandardTradingView = (lines: string[], colMap: Record<string, number
     const uniqueTrades = new Map<string, Trade>();
     
     // Identify key columns
-    const idCol = colMap['Trade #'];
+    const idCol = colMap['Trade #'] ?? colMap['Id'];
     const typeCol = colMap['Type'];
-    const pnlCol = colMap['Net P&L USD'] !== undefined ? colMap['Net P&L USD'] : colMap['Profit USD'];
+    const pnlCol = colMap['Net P&L USD'] !== undefined ? colMap['Net P&L USD'] : 
+                   colMap['Profit USD'] !== undefined ? colMap['Profit USD'] :
+                   colMap['PnL'];
+                   
     const pnlPercentCol = colMap['Net P&L %'] !== undefined ? colMap['Net P&L %'] : colMap['Profit %'];
     
     // Date/Time variants
-    const entryDateCol = colMap['Date/Time'] ?? colMap['Date and time'] ?? colMap['Entry Date/Time'];
-    const exitDateCol = colMap['Exit Date/Time'];
+    const entryDateCol = colMap['Date/Time'] ?? colMap['Date and time'] ?? colMap['Entry Date/Time'] ?? colMap['EnteredAt'];
+    const exitDateCol = colMap['Exit Date/Time'] ?? colMap['ExitedAt'];
 
     // Price variants
-    const entryPriceCol = colMap['Price'] ?? colMap['Entry Price'];
-    const exitPriceCol = colMap['Exit Price'];
+    const entryPriceCol = colMap['Price'] ?? colMap['Entry Price'] ?? colMap['EntryPrice'];
+    const exitPriceCol = colMap['Exit Price'] ?? colMap['ExitPrice'];
     
     // MAE/MFE variants
     // "Run-up USD" / "Drawdown USD"
@@ -210,6 +281,15 @@ const parseStandardTradingView = (lines: string[], colMap: Record<string, number
             if (exitPriceCol !== undefined && row[exitPriceCol]) {
                 const val = parseFloat(row[exitPriceCol].replace(/[$,]/g, ''));
                 if (!isNaN(val)) exitPrice = val;
+            }
+
+            // Calculate percent if missing but prices exist
+            if (pnlPercent === 0 && entryPrice && exitPrice) {
+                 if (type === 'Long') {
+                    pnlPercent = ((exitPrice - entryPrice) / entryPrice) * 100;
+                 } else {
+                    pnlPercent = ((entryPrice - exitPrice) / entryPrice) * 100;
+                 }
             }
             
             // MAE / MFE

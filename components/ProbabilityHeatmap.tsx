@@ -114,7 +114,7 @@ const ProbabilityHeatmap: React.FC<Props> = React.memo(({ results }) => {
   }, [results]);
 
   return (
-    <div className="bg-surface rounded-xl border border-neutral-800 shadow-xl flex flex-col h-[450px]">
+    <div className="bg-surface rounded-xl border border-neutral-800 shadow-xl flex flex-col h-[300px]">
         <div className="flex items-center gap-2 p-4 border-b border-neutral-800 bg-neutral-900/30">
             <Activity className="w-5 h-5 text-purple-400" />
             <h4 className="text-neutral-200 font-semibold text-sm">Equity Probability Heatmap</h4>
