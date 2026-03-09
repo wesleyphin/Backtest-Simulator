@@ -33,6 +33,24 @@ export const parseTradingViewCSV = (csvContent: string): Trade[] => {
   // Find headers
   const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
   
+  // -- ERROR HANDLING FOR KNOWN NON-TRADE FORMATS --
+  
+  // 1. Detect Optimization Reports (Summary Data)
+  if (headers.includes('Iteration_ID') && (headers.includes('Total_Trades') || headers.includes('WinRate'))) {
+      throw new Error("Detected Strategy Optimization Report. This file contains summary statistics, but the simulator requires a list of individual trades. Please export the 'List of Trades' tab from your backtesting platform.");
+  }
+
+  // 2. Detect Market Data (OHLCV)
+  // Check for common OHLCV columns without PnL columns
+  const hasOHLC = headers.includes('open') && headers.includes('high') && headers.includes('low') && headers.includes('close');
+  const hasBento = headers.includes('ts_event') && headers.includes('publisher_id');
+  
+  if (hasBento || (hasOHLC && !headers.some(h => h.toLowerCase().includes('p&l') || h.toLowerCase().includes('profit') || h.toLowerCase().includes('pnl')))) {
+      throw new Error("Detected Market Data (OHLCV). This file contains price data, not trade executions. Please upload a 'List of Trades' CSV to run the simulation.");
+  }
+
+  // -- END ERROR HANDLING --
+
   // Mapping column names to indices
   const colMap: Record<string, number> = {};
   headers.forEach((h, i) => {
@@ -54,7 +72,7 @@ export const parseTradingViewCSV = (csvContent: string): Trade[] => {
      }
      
      console.error("Unknown CSV format. Headers found:", headers);
-     throw new Error(`Invalid CSV format. Could not detect PnL column (e.g. 'net_pnl', 'PnL', or 'Net P&L USD').`);
+     throw new Error(`Invalid CSV format. Could not detect PnL column (e.g. 'net_pnl', 'PnL', or 'Net P&L USD'). Headers found: ${headers.join(', ')}`);
   }
 };
 
